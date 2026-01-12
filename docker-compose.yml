@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: cybershield-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+    volumes:
+      - mongodb_data:/data/db
+      - ./backend/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - cybershield-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.backend
+    container_name: cybershield-backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_URL: mongodb://admin:admin123@mongodb:27017
+      DB_NAME: cybershield_db
+      JWT_SECRET_KEY: your-super-secret-key-change-in-production
+    volumes:
+      - ./backend:/app
+      - evidence_storage:/app/evidence_storage
+    depends_on:
+      - mongodb
+    networks:
+      - cybershield-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: cybershield-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_BACKEND_URL: http://localhost:8000
+      NODE_ENV: production
+    depends_on:
+      - backend
+    networks:
+      - cybershield-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: cybershield-nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - frontend_build:/usr/share/nginx/html:ro
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - cybershield-network
+
+volumes:
+  mongodb_data:
+    driver: local
+  evidence_storage:
+    driver: local
+  frontend_build:
+    driver: local
+
+networks:
+  cybershield-network:
+    driver: bridge
